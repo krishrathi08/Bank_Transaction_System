@@ -30,13 +30,13 @@ const defaultScheduleForm = {
 };
 
 const navItems = [
-  { id: "overview", label: "Overview", accent: "Command center" },
-  { id: "accounts", label: "Accounts", accent: "Portfolio" },
-  { id: "payments", label: "Payments", accent: "Movement" },
-  { id: "beneficiaries", label: "Beneficiaries", accent: "Trusted payees" },
-  { id: "schedules", label: "Schedules", accent: "Automation" },
-  { id: "statements", label: "Statements", accent: "Passbook" },
-  { id: "reports", label: "Reports", accent: "Exports" }
+  { id: "overview", label: "Overview", accent: "Command center", code: "01" },
+  { id: "accounts", label: "Accounts", accent: "Portfolio", code: "02" },
+  { id: "payments", label: "Payments", accent: "Movement", code: "03" },
+  { id: "beneficiaries", label: "Beneficiaries", accent: "Trusted payees", code: "04" },
+  { id: "schedules", label: "Schedules", accent: "Automation", code: "05" },
+  { id: "statements", label: "Statements", accent: "Passbook", code: "06" },
+  { id: "reports", label: "Reports", accent: "Exports", code: "07" }
 ];
 
 function getStoredSession() {
@@ -99,7 +99,9 @@ async function apiRequest(path, options = {}, token = "") {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data.message || "Request failed");
+    const error = new Error(data.message || "Request failed");
+    error.status = response.status;
+    throw error;
   }
 
   return data;
@@ -139,7 +141,7 @@ export default function App() {
   const isLoggedIn = Boolean(session.token && session.user);
   const isAdmin = session.user?.role === "ADMIN";
   const enrichedNavItems = isAdmin
-    ? [ ...navItems, { id: "admin", label: "Admin", accent: "Controls" } ]
+    ? [ ...navItems, { id: "admin", label: "Admin", accent: "Controls", code: "08" } ]
     : navItems;
 
   const totalBalance = Object.values(balances).reduce(
@@ -258,6 +260,26 @@ export default function App() {
     }
   }
 
+  function handleUnauthorizedSession(error) {
+    if (error?.status !== 401) {
+      return false;
+    }
+
+    persistSession({ token: "", user: null });
+    setAccounts([]);
+    setBalances({});
+    setTransactions([]);
+    setBeneficiaries([]);
+    setSchedules([]);
+    setStatement([]);
+    setFraudAlerts([]);
+    setAdminOverview(null);
+    setCurrentScreen("overview");
+    setStatusMessage("");
+    setAuthMessage("Your session expired. Please sign in again.");
+    return true;
+  }
+
   async function bootstrapDashboard() {
     setDataLoading(true);
     setStatusMessage("");
@@ -321,6 +343,9 @@ export default function App() {
         setAdminOverview(adminResponse);
       }
     } catch (error) {
+      if (handleUnauthorizedSession(error)) {
+        return;
+      }
       setStatusMessage(getFriendlyErrorMessage(error));
     } finally {
       setDataLoading(false);
@@ -332,6 +357,9 @@ export default function App() {
       const response = await apiRequest(`/api/accounts/statement/${accountId}`, {}, session.token);
       setStatement(response.statement || []);
     } catch (error) {
+      if (handleUnauthorizedSession(error)) {
+        return;
+      }
       setStatusMessage(getFriendlyErrorMessage(error));
     }
   }
@@ -361,6 +389,9 @@ export default function App() {
       persistSession({ token: response.token, user: response.user });
       setAuthForm(defaultAuthForm);
     } catch (error) {
+      if (handleUnauthorizedSession(error)) {
+        return;
+      }
       setAuthMessage(getFriendlyErrorMessage(error));
     } finally {
       setAuthLoading(false);
@@ -402,6 +433,9 @@ export default function App() {
       setStatusMessage("New account created successfully.");
       await bootstrapDashboard();
     } catch (error) {
+      if (handleUnauthorizedSession(error)) {
+        return;
+      }
       setStatusMessage(getFriendlyErrorMessage(error));
     } finally {
       setActionLoading(false);
@@ -458,6 +492,9 @@ export default function App() {
       }));
       await bootstrapDashboard();
     } catch (error) {
+      if (handleUnauthorizedSession(error)) {
+        return;
+      }
       setStatusMessage(getFriendlyErrorMessage(error));
     } finally {
       setActionLoading(false);
@@ -478,6 +515,9 @@ export default function App() {
       setStatusMessage("Beneficiary saved successfully.");
       await bootstrapDashboard();
     } catch (error) {
+      if (handleUnauthorizedSession(error)) {
+        return;
+      }
       setStatusMessage(getFriendlyErrorMessage(error));
     } finally {
       setActionLoading(false);
@@ -495,6 +535,9 @@ export default function App() {
       setStatusMessage("Beneficiary removed successfully.");
       await bootstrapDashboard();
     } catch (error) {
+      if (handleUnauthorizedSession(error)) {
+        return;
+      }
       setStatusMessage(getFriendlyErrorMessage(error));
     } finally {
       setActionLoading(false);
@@ -521,6 +564,9 @@ export default function App() {
       setStatusMessage("Scheduled payment created successfully.");
       await bootstrapDashboard();
     } catch (error) {
+      if (handleUnauthorizedSession(error)) {
+        return;
+      }
       setStatusMessage(getFriendlyErrorMessage(error));
     } finally {
       setActionLoading(false);
@@ -539,6 +585,9 @@ export default function App() {
       setStatusMessage("Schedule updated successfully.");
       await bootstrapDashboard();
     } catch (error) {
+      if (handleUnauthorizedSession(error)) {
+        return;
+      }
       setStatusMessage(getFriendlyErrorMessage(error));
     } finally {
       setActionLoading(false);
@@ -557,6 +606,9 @@ export default function App() {
       setStatusMessage(`${response.processedCount} scheduled payment(s) processed.`);
       await bootstrapDashboard();
     } catch (error) {
+      if (handleUnauthorizedSession(error)) {
+        return;
+      }
       setStatusMessage(getFriendlyErrorMessage(error));
     } finally {
       setActionLoading(false);
@@ -601,6 +653,9 @@ export default function App() {
       anchor.click();
       window.URL.revokeObjectURL(url);
     } catch (error) {
+      if (handleUnauthorizedSession(error)) {
+        return;
+      }
       setStatusMessage(getFriendlyErrorMessage(error));
     }
   }
@@ -621,6 +676,9 @@ export default function App() {
         <div className="auth-noise auth-noise-right" />
         <section className="auth-hero">
           <div className="hero-badge-row">
+            <div className="hero-logo">
+              <span className="hero-logo-core">LB</span>
+            </div>
             <span className="eyebrow">Ledger Bank Suite</span>
             <span className="floating-pill">Full Stack Banking Console</span>
           </div>
@@ -641,6 +699,13 @@ export default function App() {
               <span>Admin oversight</span>
               <span>Scheduled rails</span>
             </div>
+          </div>
+
+          <div className="hero-ticker">
+            <span>Retail banking</span>
+            <span>Ledger integrity</span>
+            <span>Fraud visibility</span>
+            <span>Role-based controls</span>
           </div>
 
           <div className="hero-points">
@@ -779,6 +844,47 @@ export default function App() {
   function renderOverviewScreen() {
     return (
       <section className="screen-grid">
+        <section className="spotlight-panel">
+          <div className="spotlight-copy">
+            <span className="eyebrow">Operations Pulse</span>
+            <h2>Financial command center built for movement, control, and trust.</h2>
+            <p>
+              Track balances, monitor suspicious behavior, orchestrate customer payments,
+              and keep every ledger movement visible from one premium workspace.
+            </p>
+            <div className="spotlight-actions">
+              <button className="primary-button" onClick={() => setCurrentScreen("payments")} type="button">
+                Launch payment desk
+              </button>
+              <button className="ghost-button" onClick={() => setCurrentScreen("reports")} type="button">
+                Open reporting suite
+              </button>
+            </div>
+          </div>
+          <div className="spotlight-grid">
+            <article>
+              <span>Velocity</span>
+              <strong>{transactions.length}</strong>
+              <small>Tracked movements in dashboard memory</small>
+            </article>
+            <article>
+              <span>Assurance</span>
+              <strong>{fraudAlerts.length === 0 ? "Stable" : "Review"}</strong>
+              <small>Risk watch status across customer activity</small>
+            </article>
+            <article>
+              <span>Automation</span>
+              <strong>{schedules.length}</strong>
+              <small>Scheduled payment jobs waiting in queue</small>
+            </article>
+            <article>
+              <span>Network</span>
+              <strong>{beneficiaries.length}</strong>
+              <small>Trusted external payees in your railbook</small>
+            </article>
+          </div>
+        </section>
+
         <div className="metrics-grid">
           <article className="metric-card accent">
             <span>Total balance</span>
@@ -1374,6 +1480,13 @@ export default function App() {
   }
 
   function renderReportsScreen() {
+    const totalTypes = [
+      { label: "Transfers", value: reportSummary.byType.TRANSFER || 0, tone: "transfer" },
+      { label: "Deposits", value: reportSummary.byType.DEPOSIT || 0, tone: "deposit" },
+      { label: "Withdrawals", value: reportSummary.byType.WITHDRAWAL || 0, tone: "withdrawal" }
+    ];
+    const maxVolume = Math.max(...totalTypes.map((item) => item.value), 1);
+
     return (
       <section className="screen-grid">
         <div className="metrics-grid">
@@ -1399,22 +1512,50 @@ export default function App() {
           </article>
         </div>
 
-        <article className="panel-card">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">Exports</span>
-              <h2>Compliance-ready report output</h2>
+        <div className="split-grid">
+          <article className="panel-card">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">Flow Mix</span>
+                <h2>Movement composition</h2>
+              </div>
             </div>
-            <button className="primary-button" onClick={handleExportReport} type="button">
-              Export transactions CSV
-            </button>
-          </div>
 
-          <div className="note-panel">
-            <strong>Included in export</strong>
-            <p>Type, status, amount, from and to account numbers, flag reasons, notes, and timestamps.</p>
-          </div>
-        </article>
+            <div className="volume-bars">
+              {totalTypes.map((item) => (
+                <div className="volume-row" key={item.label}>
+                  <div className="volume-copy">
+                    <strong>{item.label}</strong>
+                    <span>{formatCurrency(item.value)}</span>
+                  </div>
+                  <div className="volume-track">
+                    <div
+                      className={`volume-fill ${item.tone}`}
+                      style={{ width: `${Math.max((item.value / maxVolume) * 100, 8)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel-card">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">Exports</span>
+                <h2>Compliance-ready report output</h2>
+              </div>
+              <button className="primary-button" onClick={handleExportReport} type="button">
+                Export transactions CSV
+              </button>
+            </div>
+
+            <div className="note-panel">
+              <strong>Included in export</strong>
+              <p>Type, status, amount, from and to account numbers, flag reasons, notes, and timestamps.</p>
+            </div>
+          </article>
+        </div>
       </section>
     );
   }
@@ -1552,6 +1693,10 @@ export default function App() {
       <div className="shell-glow shell-glow-right" />
       <aside className="sidebar">
         <div className="brand-block">
+          <div className="brand-logo">
+            <div className="brand-logo-ring" />
+            <div className="brand-logo-core">LB</div>
+          </div>
           <span className="eyebrow">Ledger Bank</span>
           <h1>Banking Suite</h1>
           <p>Accounts, payments, statements, controls.</p>
@@ -1570,8 +1715,11 @@ export default function App() {
               onClick={() => setCurrentScreen(item.id)}
               type="button"
             >
-              <strong>{item.label}</strong>
-              <span>{item.accent}</span>
+              <span className="nav-code">{item.code}</span>
+              <span className="nav-copy">
+                <strong>{item.label}</strong>
+                <span>{item.accent}</span>
+              </span>
             </button>
           ))}
         </nav>
@@ -1596,11 +1744,33 @@ export default function App() {
           </div>
 
           <div className="header-actions">
+            <div className="live-indicator">
+              <span className="live-dot" />
+              <span>Ledger synced</span>
+            </div>
             <button className="ghost-button" onClick={() => bootstrapDashboard()} type="button">
               {dataLoading ? "Refreshing..." : "Refresh data"}
             </button>
           </div>
         </header>
+
+        <section className="workspace-ribbon">
+          <div className="ribbon-card">
+            <span className="eyebrow">Live Balance</span>
+            <strong>{formatCurrency(totalBalance)}</strong>
+            <small>Across all active accounts</small>
+          </div>
+          <div className="ribbon-card">
+            <span className="eyebrow">Accounts</span>
+            <strong>{accounts.length}</strong>
+            <small>Mapped to this identity</small>
+          </div>
+          <div className="ribbon-card">
+            <span className="eyebrow">Alerts</span>
+            <strong>{fraudAlerts.length}</strong>
+            <small>Risk queue requiring attention</small>
+          </div>
+        </section>
 
         <section className="workspace-ribbon">
           <div className="ribbon-card">
