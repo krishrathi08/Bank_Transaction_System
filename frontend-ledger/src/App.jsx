@@ -107,6 +107,25 @@ async function apiRequest(path, options = {}, token = "") {
   return data;
 }
 
+function HudClock() {
+  const [time, setTime] = useState("");
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      setTime(now.toTimeString().split(" ")[0]);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="hud-clock-container">
+      <span className="hud-clock-label">SYS TIME</span>
+      <span className="hud-clock-time">{time || "00:00:00"}</span>
+    </div>
+  );
+}
+
 export default function App() {
   const [mode, setMode] = useState("login");
   const [currentScreen, setCurrentScreen] = useState("overview");
@@ -138,16 +157,7 @@ export default function App() {
   });
   const [fraudAlerts, setFraudAlerts] = useState([]);
   const [adminOverview, setAdminOverview] = useState(null);
-  const [hudTime, setHudTime] = useState("");
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const now = new Date();
-      const format = now.toTimeString().split(" ")[0]; // "HH:MM:SS"
-      setHudTime(format);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   const isLoggedIn = Boolean(session.token && session.user);
   const isAdmin = session.user?.role === "ADMIN";
@@ -1897,10 +1907,7 @@ export default function App() {
           </div>
 
           <div className="header-actions">
-            <div className="hud-clock-container">
-              <span className="hud-clock-label">SYS TIME</span>
-              <span className="hud-clock-time">{hudTime || "00:00:00"}</span>
-            </div>
+            <HudClock />
             <div className="live-indicator">
               <span className="live-dot" />
               <span>Ledger synced</span>
