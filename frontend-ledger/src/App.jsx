@@ -123,6 +123,7 @@ export default function App() {
   const [session, setSession] = useState(getStoredSession);
   const [googleClientId, setGoogleClientId] = useState("");
   const [googleReady, setGoogleReady] = useState(false);
+  const [screenTransitionKey, setScreenTransitionKey] = useState(0);
   const [accounts, setAccounts] = useState([]);
   const [balances, setBalances] = useState({});
   const [transactions, setTransactions] = useState([]);
@@ -137,6 +138,16 @@ export default function App() {
   });
   const [fraudAlerts, setFraudAlerts] = useState([]);
   const [adminOverview, setAdminOverview] = useState(null);
+  const [hudTime, setHudTime] = useState("");
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      const format = now.toTimeString().split(" ")[0]; // "HH:MM:SS"
+      setHudTime(format);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const isLoggedIn = Boolean(session.token && session.user);
   const isAdmin = session.user?.role === "ADMIN";
@@ -149,6 +160,10 @@ export default function App() {
     0
   );
   const activeScreen = enrichedNavItems.find((item) => item.id === currentScreen) || enrichedNavItems[0];
+
+  useEffect(() => {
+    setScreenTransitionKey((current) => current + 1);
+  }, [currentScreen]);
 
   useEffect(() => {
     void loadGoogleConfig();
@@ -886,25 +901,89 @@ export default function App() {
         </section>
 
         <div className="metrics-grid">
-          <article className="metric-card accent">
+          <article className="metric-card accent" style={{ position: "relative" }}>
             <span>Total balance</span>
-            <strong>{formatCurrency(totalBalance)}</strong>
+            <strong style={{ position: "relative", zIndex: 2 }}>{formatCurrency(totalBalance)}</strong>
             <small>Across all active accounts</small>
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "48px", overflow: "hidden", pointerEvents: "none" }}>
+              <svg width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="glowGold" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--gold)" stopOpacity="0.4" />
+                    <stop offset="100%" stopColor="var(--gold)" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d="M0,35 Q15,10 30,28 T60,8 T90,24 L100,20 L100,40 L0,40 Z"
+                  fill="url(#glowGold)"
+                />
+                <path
+                  d="M0,35 Q15,10 30,28 T60,8 T90,24 L100,20"
+                  fill="none"
+                  stroke="var(--gold)"
+                  strokeWidth="1.5"
+                  className="sparkline-glow-gold"
+                />
+                <circle cx="100" cy="20" r="2" fill="var(--gold)" className="sparkline-pulse-dot" />
+              </svg>
+            </div>
           </article>
-          <article className="metric-card">
+          <article className="metric-card" style={{ position: "relative" }}>
             <span>Total accounts</span>
             <strong>{accounts.length}</strong>
             <small>Retail and settlement accounts</small>
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "36px", overflow: "hidden", pointerEvents: "none", opacity: 0.7 }}>
+              <svg width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="none">
+                <path
+                  d="M0,32 L20,32 L40,16 L60,16 L80,8 L100,8"
+                  fill="none"
+                  stroke="var(--teal)"
+                  strokeWidth="1.5"
+                />
+              </svg>
+            </div>
           </article>
-          <article className="metric-card">
+          <article className="metric-card" style={{ position: "relative" }}>
             <span>Flagged alerts</span>
-            <strong>{fraudAlerts.length}</strong>
+            <strong style={{ color: fraudAlerts.length > 0 ? "var(--rose)" : "inherit" }}>{fraudAlerts.length}</strong>
             <small>Transactions needing review</small>
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "36px", overflow: "hidden", pointerEvents: "none", opacity: 0.6 }}>
+              <svg width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="none">
+                <path
+                  d="M0,38 L30,38 L50,15 L70,30 L100,5"
+                  fill="none"
+                  stroke="var(--rose)"
+                  strokeWidth="1.5"
+                />
+              </svg>
+            </div>
           </article>
-          <article className="metric-card">
+          <article className="metric-card" style={{ position: "relative" }}>
             <span>Total volume</span>
             <strong>{formatCurrency(reportSummary.totalVolume)}</strong>
             <small>All completed customer activity</small>
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "42px", overflow: "hidden", pointerEvents: "none" }}>
+              <svg width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="glowPurple" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--blue)" stopOpacity="0.3" />
+                    <stop offset="100%" stopColor="var(--blue)" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d="M0,30 Q20,8 40,25 T80,12 L100,18 L100,40 L0,40 Z"
+                  fill="url(#glowPurple)"
+                />
+                <path
+                  d="M0,30 Q20,8 40,25 T80,12 L100,18"
+                  fill="none"
+                  stroke="var(--blue)"
+                  strokeWidth="1.5"
+                  className="sparkline-glow"
+                />
+                <circle cx="100" cy="18" r="2" fill="var(--blue)" className="sparkline-pulse-dot" />
+              </svg>
+            </div>
           </article>
         </div>
 
@@ -984,18 +1063,47 @@ export default function App() {
 
           <div className="account-grid">
             {accounts.map((account) => (
-              <div className="account-card" key={account._id}>
-                <div>
-                  <span className="eyebrow">Account</span>
-                  <h3>{account.nickname}</h3>
-                  <p>{account.accountNumber}</p>
+              <div className="cyber-card-wrapper" key={account._id}>
+                <div className="cyber-card">
+                  <div className="cyber-card-contactless">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                  
+                  <div className="cyber-card-row">
+                    <div className="cyber-card-chip">
+                      <div className="cyber-card-chip-line-x"></div>
+                      <div className="cyber-card-chip-line-y"></div>
+                    </div>
+                    <span className={`status-chip ${account.status.toLowerCase()}`}>
+                      {account.status}
+                    </span>
+                  </div>
+
+                  <div className="cyber-card-info">
+                    <div className="cyber-card-number">
+                      {account.accountNumber ? account.accountNumber.match(/.{1,4}/g)?.join(" ") : "•••• •••• •••• ••••"}
+                    </div>
+                    
+                    <div className="cyber-card-row">
+                      <div>
+                        <div className="cyber-card-label">Cardholder</div>
+                        <div className="cyber-card-val">{account.nickname}</div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div className="cyber-card-label">Balance</div>
+                        <div className="cyber-card-val" style={{ color: "var(--gold)", textShadow: "0 0 10px rgba(251, 191, 36, 0.25)" }}>
+                          {formatCurrency(balances[account._id])}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="account-card-footer">
-                  <span className={`status-chip ${account.status.toLowerCase()}`}>{account.status}</span>
-                  <strong>{formatCurrency(balances[account._id])}</strong>
-                </div>
+                
                 {isAdmin ? (
-                  <div className="inline-actions">
+                  <div className="inline-actions" style={{ justifyContent: "center" }}>
                     <button
                       className="ghost-button small"
                       onClick={() => handleAccountStatusUpdate(account._id, "FROZEN")}
@@ -1692,6 +1800,8 @@ export default function App() {
       <div className="shell-glow shell-glow-left" />
       <div className="shell-glow shell-glow-right" />
       <aside className="sidebar">
+        <div className="sidebar-beam sidebar-beam-top" />
+        <div className="sidebar-beam sidebar-beam-bottom" />
         <div className="brand-block">
           <div className="brand-logo">
             <div className="brand-logo-ring" />
@@ -1724,6 +1834,43 @@ export default function App() {
           ))}
         </nav>
 
+        <div className="ledger-ticker-wrap">
+          <div className="ledger-ticker-content">
+            <span>
+              <span className="ledger-ticker-status-dot"></span>
+              Rails: Secure (AES-256)
+            </span>
+            <span>
+              <span className="ledger-ticker-status-dot"></span>
+              Ping: 14ms
+            </span>
+            <span>
+              <span className="ledger-ticker-status-dot"></span>
+              Verification: 100%
+            </span>
+            <span>
+              <span className="ledger-ticker-status-dot"></span>
+              Node: Synced
+            </span>
+            <span>
+              <span className="ledger-ticker-status-dot"></span>
+              Rails: Secure (AES-256)
+            </span>
+            <span>
+              <span className="ledger-ticker-status-dot"></span>
+              Ping: 14ms
+            </span>
+            <span>
+              <span className="ledger-ticker-status-dot"></span>
+              Verification: 100%
+            </span>
+            <span>
+              <span className="ledger-ticker-status-dot"></span>
+              Node: Synced
+            </span>
+          </div>
+        </div>
+
         <div className="sidebar-footer">
           <div>
             <strong>{session.user?.name}</strong>
@@ -1736,6 +1883,12 @@ export default function App() {
       </aside>
 
       <main className="workspace">
+        <div className="workspace-gridline workspace-gridline-x" />
+        <div className="workspace-gridline workspace-gridline-y" />
+        <div className="workspace-orb workspace-orb-a" />
+        <div className="workspace-orb workspace-orb-b" />
+        <div className="workspace-orb workspace-orb-c" />
+
         <header className="workspace-header">
           <div className="workspace-heading">
             <span className="eyebrow">Digital Operations</span>
@@ -1744,6 +1897,10 @@ export default function App() {
           </div>
 
           <div className="header-actions">
+            <div className="hud-clock-container">
+              <span className="hud-clock-label">SYS TIME</span>
+              <span className="hud-clock-time">{hudTime || "00:00:00"}</span>
+            </div>
             <div className="live-indicator">
               <span className="live-dot" />
               <span>Ledger synced</span>
@@ -1759,39 +1916,26 @@ export default function App() {
             <span className="eyebrow">Live Balance</span>
             <strong>{formatCurrency(totalBalance)}</strong>
             <small>Across all active accounts</small>
+            <div className="ribbon-spark" />
           </div>
           <div className="ribbon-card">
             <span className="eyebrow">Accounts</span>
             <strong>{accounts.length}</strong>
             <small>Mapped to this identity</small>
+            <div className="ribbon-spark" />
           </div>
           <div className="ribbon-card">
             <span className="eyebrow">Alerts</span>
             <strong>{fraudAlerts.length}</strong>
             <small>Risk queue requiring attention</small>
-          </div>
-        </section>
-
-        <section className="workspace-ribbon">
-          <div className="ribbon-card">
-            <span className="eyebrow">Live Balance</span>
-            <strong>{formatCurrency(totalBalance)}</strong>
-            <small>Across all active accounts</small>
-          </div>
-          <div className="ribbon-card">
-            <span className="eyebrow">Accounts</span>
-            <strong>{accounts.length}</strong>
-            <small>Mapped to this identity</small>
-          </div>
-          <div className="ribbon-card">
-            <span className="eyebrow">Alerts</span>
-            <strong>{fraudAlerts.length}</strong>
-            <small>Risk queue requiring attention</small>
+            <div className="ribbon-spark" />
           </div>
         </section>
 
         {statusMessage ? <div className="workspace-message">{statusMessage}</div> : null}
-        {renderCurrentScreen()}
+        <div className="screen-stage" key={screenTransitionKey}>
+          {renderCurrentScreen()}
+        </div>
       </main>
     </div>
   );
