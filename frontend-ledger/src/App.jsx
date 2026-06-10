@@ -158,6 +158,21 @@ export default function App() {
   const [fraudAlerts, setFraudAlerts] = useState([]);
   const [adminOverview, setAdminOverview] = useState(null);
 
+  const [resetToken, setResetToken] = useState("");
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [otpOpen, setOtpOpen] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpTransactionId, setOtpTransactionId] = useState("");
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpError, setOtpError] = useState("");
+  const [filterStartDate, setFilterStartDate] = useState("");
+  const [filterEndDate, setFilterEndDate] = useState("");
+  const [filterMinAmount, setFilterMinAmount] = useState("");
+  const [filterMaxAmount, setFilterMaxAmount] = useState("");
+  const [filtersVisible, setFiltersVisible] = useState(false);
+
+
 
   const isLoggedIn = Boolean(session.token && session.user);
   const isAdmin = session.user?.role === "ADMIN";
@@ -177,6 +192,15 @@ export default function App() {
 
   useEffect(() => {
     void loadGoogleConfig();
+  }, []);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get("resetToken") || urlParams.get("token");
+    if (token) {
+      setResetToken(token);
+      setMode("reset-password");
+    }
   }, []);
 
   useEffect(() => {
@@ -319,7 +343,7 @@ export default function App() {
         fraudResponse
       ] = await Promise.all([
         apiRequest("/api/accounts", {}, session.token),
-        apiRequest("/api/transactions?limit=50", {}, session.token),
+        apiRequest(`/api/transactions?limit=50${filterStartDate ? `&startDate=${filterStartDate}` : ""}${filterEndDate ? `&endDate=${filterEndDate}` : ""}${filterMinAmount ? `&minAmount=${filterMinAmount}` : ""}${filterMaxAmount ? `&maxAmount=${filterMaxAmount}` : ""}`, {}, session.token),
         apiRequest("/api/beneficiaries", {}, session.token),
         apiRequest("/api/schedules", {}, session.token),
         apiRequest("/api/reports/summary", {}, session.token),
@@ -374,6 +398,143 @@ export default function App() {
       setStatusMessage(getFriendlyErrorMessage(error));
     } finally {
       setDataLoading(false);
+    }
+  }
+
+  async function loadTransactions(customFilters = null) {
+    setDataLoading(true);
+    try {
+      const sf = customFilters || {
+        startDate: filterStartDate,
+        endDate: filterEndDate,
+        minAmount: filterMinAmount,
+        maxAmount: filterMaxAmount
+      };
+      const query = new URLSearchParams();
+      query.append("limit", "50");
+      if (sf.startDate) query.append("startDate", sf.startDate);
+      if (sf.endDate) query.append("endDate", sf.endDate);
+      if (sf.minAmount) query.append("minAmount", sf.minAmount);
+      if (sf.maxAmount) query.append("maxAmount", sf.maxAmount);
+
+      const response = await apiRequest(`/api/transactions?${query.toString()}`, {}, session.token);
+      setTransactions(response.transactions || []);
+    } catch (error) {
+      if (handleUnauthorizedSession(error)) {
+        return;
+      }
+      setStatusMessage(getFriendlyErrorMessage(error));
+    } finally {
+      setDataLoading(false);
+    }
+  }
+
+  async function handleForgotPasswordSubmit(event) {
+    event.preventDefault();
+    setAuthLoading(true);
+    setAuthMessage("");
+    try {
+      const response = await apiRequest("/api/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      setAuthMessage(response.message || "Reset link sent to your email.");
+      setForgotEmail("");
+    } catch (error) {
+      setAuthMessage(getFriendlyErrorMessage(error));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleResetPasswordSubmit(event) {
+    event.preventDefault();
+    if (resetPassword.length < 6) {
+      setAuthMessage("Password must be at least 6 characters long.");
+      return;
+    }
+    setAuthLoading(true);
+    setAuthMessage("");
+    try {
+      const response = await apiRequest("/api/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify({ token: resetToken, password: resetPassword })
+      });
+      setAuthMessage(response.message || "Password reset successful. You can now login.");
+      setResetPassword("");
+      setResetToken("");
+      window.history.replaceState({}, document.title, window.location.pathname);
+      setMode("login");
+    } catch (error) {
+      setAuthMessage(getFriendlyErrorMessage(error));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleVerifyTransferOtp(event) {
+    event.preventDefault();
+    if (otpCode.length !== 6) {
+      setOtpError("OTP code must be 6 digits.");
+      return;
+    }
+    setOtpLoading(true);
+    setOtpError("");
+
+    try {
+      const response = await apiRequest("/api/transactions/verify-otp", {
+        method: "POST",
+        body: JSON.stringify({ transactionId: otpTransactionId, otp: otpCode })
+      }, session.token);
+
+      setStatusMessage(response.message || "Transfer completed successfully.");
+      setOtpOpen(false);
+      setOtpCode("");
+      setOtpTransactionId("");
+      setPaymentForm((current) => ({
+        ...defaultPaymentForm,
+        type: current.type,
+        fromAccount: current.fromAccount
+      }));
+      await bootstrapDashboard();
+    } catch (error) {
+      setOtpError(getFriendlyErrorMessage(error));
+    } finally {
+      setOtpLoading(false);
+    }
+  }
+
+  async function handleExportPdfStatement() {
+    if (!statementAccountId) {
+      setStatusMessage("Please select an account first.");
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const response = await fetch(`/api/reports/statement/pdf/${statementAccountId}`, {
+        headers: {
+          Authorization: `Bearer ${session.token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error("PDF statement export failed");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `statement-${statementAccountId}.pdf`;
+      anchor.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      if (handleUnauthorizedSession(error)) {
+        return;
+      }
+      setStatusMessage(getFriendlyErrorMessage(error));
+    } finally {
+      setActionLoading(false);
     }
   }
 
@@ -508,6 +669,14 @@ export default function App() {
         method: "POST",
         body: JSON.stringify(payload)
       }, session.token);
+
+      if (response.status === "PENDING_OTP") {
+        setOtpTransactionId(response.transaction._id);
+        setOtpOpen(true);
+        setOtpError("");
+        setStatusMessage(response.message || "OTP verification required.");
+        return;
+      }
 
       setStatusMessage(response.message || "Payment completed successfully.");
       setPaymentForm((current) => ({
@@ -750,117 +919,201 @@ export default function App() {
         </section>
 
         <section className="auth-card">
-          <div className="panel-header">
-            <span className="eyebrow">Client Access</span>
-            <div className="mode-switch">
-              <button
-                className={mode === "login" ? "active" : ""}
-                onClick={() => setMode("login")}
-                type="button"
-              >
-                Login
-              </button>
-              <button
-                className={mode === "register" ? "active" : ""}
-                onClick={() => setMode("register")}
-                type="button"
-              >
-                Register
-              </button>
-            </div>
-          </div>
+          {mode === "forgot-password" ? (
+            <>
+              <div className="panel-header">
+                <span className="eyebrow">Security Recovery</span>
+                <div className="mode-switch">
+                  <button className="active" type="button">Recovery</button>
+                </div>
+              </div>
+              <form className="stack-form" onSubmit={handleForgotPasswordSubmit}>
+                <label>
+                  Email Address
+                  <input
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(event) => setForgotEmail(event.target.value)}
+                    placeholder="client@ledgerbank.com"
+                    required
+                  />
+                </label>
+                <button className="primary-button" disabled={authLoading} type="submit">
+                  {authLoading ? "Sending Link..." : "Send Reset Link"}
+                </button>
+                <button
+                  className="ghost-button"
+                  onClick={() => { setMode("login"); setAuthMessage(""); }}
+                  type="button"
+                  style={{ marginTop: "8px" }}
+                >
+                  Back to Login
+                </button>
+                {authMessage ? <p className="inline-message">{authMessage}</p> : null}
+              </form>
+            </>
+          ) : mode === "reset-password" ? (
+            <>
+              <div className="panel-header">
+                <span className="eyebrow">Security Reset</span>
+                <div className="mode-switch">
+                  <button className="active" type="button">Reset</button>
+                </div>
+              </div>
+              <form className="stack-form" onSubmit={handleResetPasswordSubmit}>
+                <label>
+                  New Password
+                  <input
+                    type="password"
+                    minLength="6"
+                    value={resetPassword}
+                    onChange={(event) => setResetPassword(event.target.value)}
+                    placeholder="Enter new secure password"
+                    required
+                  />
+                  <span className="field-hint">Must contain at least 6 characters.</span>
+                </label>
+                <button className="primary-button" disabled={authLoading} type="submit">
+                  {authLoading ? "Updating..." : "Update Password"}
+                </button>
+                <button
+                  className="ghost-button"
+                  onClick={() => { setMode("login"); setAuthMessage(""); }}
+                  type="button"
+                  style={{ marginTop: "8px" }}
+                >
+                  Cancel & Login
+                </button>
+                {authMessage ? <p className="inline-message">{authMessage}</p> : null}
+              </form>
+            </>
+          ) : (
+            <>
+              <div className="panel-header">
+                <span className="eyebrow">Client Access</span>
+                <div className="mode-switch">
+                  <button
+                    className={mode === "login" ? "active" : ""}
+                    onClick={() => setMode("login")}
+                    type="button"
+                  >
+                    Login
+                  </button>
+                  <button
+                    className={mode === "register" ? "active" : ""}
+                    onClick={() => setMode("register")}
+                    type="button"
+                  >
+                    Register
+                  </button>
+                </div>
+              </div>
 
-          <form className="stack-form" onSubmit={handleAuthSubmit}>
-            {mode === "register" ? (
-              <label>
-                Full name
-                <input
-                  type="text"
-                  value={authForm.name}
-                  onChange={(event) =>
-                    setAuthForm((current) => ({
-                      ...current,
-                      name: event.target.value
-                    }))
-                  }
-                  placeholder="Krish Rathore"
-                  required
-                />
-              </label>
-            ) : null}
+              <form className="stack-form" onSubmit={handleAuthSubmit}>
+                {mode === "register" ? (
+                  <label>
+                    Full name
+                    <input
+                      type="text"
+                      value={authForm.name}
+                      onChange={(event) =>
+                        setAuthForm((current) => ({
+                          ...current,
+                          name: event.target.value
+                        }))
+                      }
+                      placeholder="Krish Rathore"
+                      required
+                    />
+                  </label>
+                ) : null}
 
-            <label>
-              Email
-              <input
-                type="email"
-                value={authForm.email}
-                onChange={(event) =>
-                  setAuthForm((current) => ({
-                    ...current,
-                    email: event.target.value
-                  }))
-                }
-                placeholder="client@ledgerbank.com"
-                required
-              />
-            </label>
+                <label>
+                  Email
+                  <input
+                    type="email"
+                    value={authForm.email}
+                    onChange={(event) =>
+                      setAuthForm((current) => ({
+                        ...current,
+                        email: event.target.value
+                      }))
+                    }
+                    placeholder="client@ledgerbank.com"
+                    required
+                  />
+                </label>
 
-            <label>
-              Password
-              <input
-                type="password"
-                minLength="6"
-                value={authForm.password}
-                onChange={(event) =>
-                  setAuthForm((current) => ({
-                    ...current,
-                    password: event.target.value
-                  }))
-                }
-                placeholder="Enter secure password"
-                required
-              />
-              {mode === "register" ? (
-                <span className="field-hint">Password must contain at least 6 characters.</span>
-              ) : null}
-            </label>
+                <label>
+                  Password
+                  <input
+                    type="password"
+                    minLength="6"
+                    value={authForm.password}
+                    onChange={(event) =>
+                      setAuthForm((current) => ({
+                        ...current,
+                        password: event.target.value
+                      }))
+                    }
+                    placeholder="Enter secure password"
+                    required
+                  />
+                  {mode === "register" ? (
+                    <span className="field-hint">Password must contain at least 6 characters.</span>
+                  ) : null}
+                  {mode === "login" ? (
+                    <div style={{ textAlign: "right", marginTop: "4px" }}>
+                      <button
+                        className="ghost-button small"
+                        onClick={() => { setMode("forgot-password"); setAuthMessage(""); }}
+                        type="button"
+                        style={{ border: "none", background: "none", padding: 0, textDecoration: "underline", cursor: "pointer", fontSize: "0.85rem", color: "var(--text-3)" }}
+                      >
+                        Forgot Password?
+                      </button>
+                    </div>
+                  ) : null}
+                </label>
 
-            <button className="primary-button" disabled={authLoading} type="submit">
-              {authLoading ? "Processing..." : mode === "register" ? "Create Profile" : "Access Platform"}
-            </button>
+                <button className="primary-button" disabled={authLoading} type="submit">
+                  {authLoading ? "Processing..." : mode === "register" ? "Create Profile" : "Access Platform"}
+                </button>
 
-            {authMessage ? <p className="inline-message">{authMessage}</p> : null}
-          </form>
+                {authMessage ? <p className="inline-message">{authMessage}</p> : null}
+              </form>
 
-          <div className="auth-divider">
-            <span>or continue with</span>
-          </div>
+              <div className="auth-divider">
+                <span>or continue with</span>
+              </div>
 
-          <div className="google-panel">
-            <button
-              className="google-fallback-button"
-              onClick={() => {
-                if (!googleClientId) {
-                  setGoogleMessage("Google sign-in is not configured on the server yet.");
-                  return;
-                }
+              <div className="google-panel">
+                <button
+                  className="google-fallback-button"
+                  onClick={() => {
+                    if (!googleClientId) {
+                      setGoogleMessage("Google sign-in is not configured on the server yet.");
+                      return;
+                    }
 
-                if (!googleReady) {
-                  setGoogleMessage("Google sign-in is still loading. Give it a moment and try again.");
-                }
-              }}
-              type="button"
-            >
-              <span className="google-mark">G</span>
-              Continue with Google
-            </button>
+                    if (!googleReady) {
+                      setGoogleMessage("Google sign-in is still loading. Give it a moment and try again.");
+                    }
+                  }}
+                  type="button"
+                >
+                  <span className="google-mark">G</span>
+                  Continue with Google
+                </button>
 
-            {googleClientId ? (
-              <div className={`google-live-button ${googleReady ? "ready" : ""}`} id="google-signin-button" />
-            ) : null}
+                {googleClientId ? (
+                  <div className={`google-live-button ${googleReady ? "ready" : ""}`} id="google-signin-button" />
+                ) : null}
 
-            {googleMessage ? <p className="inline-message">{googleMessage}</p> : null}
-          </div>
+                {googleMessage ? <p className="inline-message">{googleMessage}</p> : null}
+              </div>
+            </>
+          )}
         </section>
       </main>
     );
@@ -1253,16 +1506,130 @@ export default function App() {
                 <span className="eyebrow">History</span>
                 <h2>Recent payment trail</h2>
               </div>
+              <button
+                className="ghost-button small"
+                onClick={() => setFiltersVisible(!filtersVisible)}
+                type="button"
+              >
+                {filtersVisible ? "Hide Filters" : "Show Filters"}
+              </button>
             </div>
 
+            {filtersVisible && (
+              <div className="filters-panel" style={{
+                marginBottom: "20px",
+                padding: "20px",
+                background: "rgba(18, 14, 29, 0.5)",
+                border: "1px solid rgba(139, 92, 246, 0.15)",
+                borderRadius: "14px",
+                boxShadow: "inset 0 0 20px rgba(139, 92, 246, 0.05)"
+              }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                  <label style={{ display: "grid", gap: "8px", color: "var(--text-2)", fontWeight: "600", fontSize: "0.85rem" }}>
+                    Start Date
+                    <input
+                      type="date"
+                      value={filterStartDate}
+                      onChange={(e) => setFilterStartDate(e.target.value)}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(139, 92, 246, 0.12)",
+                        background: "rgba(18, 14, 29, 0.6)",
+                        color: "#fff",
+                        outline: "none"
+                      }}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "8px", color: "var(--text-2)", fontWeight: "600", fontSize: "0.85rem" }}>
+                    End Date
+                    <input
+                      type="date"
+                      value={filterEndDate}
+                      onChange={(e) => setFilterEndDate(e.target.value)}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(139, 92, 246, 0.12)",
+                        background: "rgba(18, 14, 29, 0.6)",
+                        color: "#fff",
+                        outline: "none"
+                      }}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "8px", color: "var(--text-2)", fontWeight: "600", fontSize: "0.85rem" }}>
+                    Min Amount (₹)
+                    <input
+                      type="number"
+                      placeholder="Min"
+                      value={filterMinAmount}
+                      onChange={(e) => setFilterMinAmount(e.target.value)}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(139, 92, 246, 0.12)",
+                        background: "rgba(18, 14, 29, 0.6)",
+                        color: "#fff",
+                        outline: "none"
+                      }}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "8px", color: "var(--text-2)", fontWeight: "600", fontSize: "0.85rem" }}>
+                    Max Amount (₹)
+                    <input
+                      type="number"
+                      placeholder="Max"
+                      value={filterMaxAmount}
+                      onChange={(e) => setFilterMaxAmount(e.target.value)}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(139, 92, 246, 0.12)",
+                        background: "rgba(18, 14, 29, 0.6)",
+                        color: "#fff",
+                        outline: "none"
+                      }}
+                    />
+                  </label>
+                </div>
+                <div style={{ display: "flex", gap: "12px", marginTop: "16px" }}>
+                  <button
+                    className="primary-button small"
+                    onClick={() => loadTransactions()}
+                    type="button"
+                    style={{ padding: "8px 16px", fontSize: "0.85rem" }}
+                  >
+                    Apply Filters
+                  </button>
+                  <button
+                    className="ghost-button small"
+                    onClick={() => {
+                      setFilterStartDate("");
+                      setFilterEndDate("");
+                      setFilterMinAmount("");
+                      setFilterMaxAmount("");
+                      loadTransactions({ startDate: "", endDate: "", minAmount: "", maxAmount: "" });
+                    }}
+                    type="button"
+                    style={{ padding: "8px 16px", fontSize: "0.85rem" }}
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="table-list">
-              {transactions.slice(0, 8).map((transaction) => (
+              {transactions.slice(0, 50).map((transaction) => (
                 <div className="table-row" key={transaction._id}>
                   <div>
                     <strong>{transaction.type}</strong>
                     <p>{transaction.note || formatDate(transaction.createdAt)}</p>
                   </div>
                   <div className="row-meta">
+                    <span className={`status-chip ${transaction.status.toLowerCase()}`}>
+                      {transaction.status}
+                    </span>
                     {transaction.flagged ? <span className="status-chip flagged">Review</span> : null}
                     <strong>{formatCurrency(transaction.amount)}</strong>
                   </div>
@@ -1558,24 +1925,38 @@ export default function App() {
     return (
       <section className="screen-grid">
         <article className="panel-card">
-          <div className="section-heading">
+          <div className="section-heading" style={{ flexWrap: "wrap", gap: "12px" }}>
             <div>
               <span className="eyebrow">Statements</span>
               <h2>Passbook and running balance</h2>
             </div>
 
-            <select
-              className="screen-select"
-              value={statementAccountId}
-              onChange={(event) => setStatementAccountId(event.target.value)}
-            >
-              <option value="">Select account</option>
-              {accounts.map((account) => (
-                <option key={account._id} value={account._id}>
-                  {account.nickname} | {account.accountNumber}
-                </option>
-              ))}
-            </select>
+            <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+              <select
+                className="screen-select"
+                value={statementAccountId}
+                onChange={(event) => setStatementAccountId(event.target.value)}
+                style={{ width: "auto" }}
+              >
+                <option value="">Select account</option>
+                {accounts.map((account) => (
+                  <option key={account._id} value={account._id}>
+                    {account.nickname} | {account.accountNumber}
+                  </option>
+                ))}
+              </select>
+              {statementAccountId && (
+                <button
+                  className="primary-button small"
+                  onClick={handleExportPdfStatement}
+                  disabled={actionLoading}
+                  type="button"
+                  style={{ padding: "10px 16px", fontSize: "0.9rem" }}
+                >
+                  {actionLoading ? "Exporting..." : "Download PDF"}
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="statement-list">
@@ -1944,6 +2325,54 @@ export default function App() {
           {renderCurrentScreen()}
         </div>
       </main>
+
+      {otpOpen && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <span className="eyebrow">Security Verification</span>
+            <h2>Enter Transfer OTP</h2>
+            <p>A 6-digit confirmation code was sent to your registered email to approve this transfer.</p>
+
+            <form onSubmit={handleVerifyTransferOtp}>
+              <input
+                type="text"
+                maxLength="6"
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                placeholder="000000"
+                className="otp-input-field"
+                required
+                autoFocus
+              />
+              {otpError ? <p className="error-text" style={{ color: "var(--rose)", marginTop: "12px", fontSize: "0.9rem" }}>{otpError}</p> : null}
+
+              <div style={{ display: "flex", gap: "12px", marginTop: "24px" }}>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={otpLoading}
+                  style={{ flex: 1 }}
+                >
+                  {otpLoading ? "Verifying..." : "Verify Code"}
+                </button>
+                <button
+                  className="ghost-button"
+                  type="button"
+                  onClick={() => {
+                    setOtpOpen(false);
+                    setOtpCode("");
+                    setOtpTransactionId("");
+                    setOtpError("");
+                  }}
+                  style={{ padding: "10px 16px" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
