@@ -6,7 +6,8 @@
     "dev": "concurrently \"npm.cmd --prefix backend-ledger start\" \"npm.cmd --prefix frontend-ledger run dev\"",
     "backend": "npm.cmd --prefix backend-ledger start",
     "frontend": "npm.cmd --prefix frontend-ledger run dev",
-    "install:all": "npm.cmd --prefix backend-ledger install && npm.cmd --prefix frontend-ledger install"
+    "install:all": "npm.cmd --prefix backend-ledger install && npm.cmd --prefix frontend-ledger install",
+    "start": "node backend-ledger/server.js"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
